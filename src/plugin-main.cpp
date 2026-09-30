@@ -1,56 +1,56 @@
-/*
-obs-text-slideshow
-Copyright (C) 2021 Joshua Wong jbwong05@gmail.com
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program. If not, see <https://www.gnu.org/licenses/>
-*/
-
 #include <obs-module.h>
 #include <obs-frontend-api.h>
-#include <QMainWindow>
-
-#include "plugin-macros.generated.h"
+#include <util/platform.h>
+#include <qt-wrappers.hpp>
 #include "obs-text-slideshow-dock.h"
 
+// Tell OBS this is a valid plugin module
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
-extern void load_text_freetype2_slideshow();
-#ifdef _WIN32
-extern void load_text_gdiplus_slideshow();
-#endif
+// Set up the default language files
+OBS_MODULE_USE_DEFAULT_LOCALE("obs-text-slideshow", "en-US")
 
-bool obs_module_load(void)
+// Extern pointers to the text source definitions (defined in your other source files)
+extern struct obs_source_info obs_text_freetype2_slideshow_source_info;
+extern struct obs_source_info obs_text_gdiplus_slideshow_source_info;
+
+/**
+ * Creation callback function required by OBS Studio 30+.
+ * This safely builds the custom Qt user interface when OBS asks for it.
+ */
+static QWidget *CreateTextSlideshowDock(void *data)
 {
-	load_text_freetype2_slideshow();
-#ifdef _WIN32
-	load_text_gdiplus_slideshow();
-#endif
-
-	const auto main_window =
-		static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	obs_frontend_push_ui_translation(obs_module_get_string);
-	auto *tmp = new TextSlideshowDock(main_window);
-	obs_frontend_add_dock(tmp);
-	obs_frontend_pop_ui_translation();
-
-	blog(LOG_INFO, "plugin loaded successfully (version %s)",
-	     PLUGIN_VERSION);
-	return true;
+    UNUSED_PARAMETER(data);
+    return new TextSlideshowDock();
 }
 
-void obs_module_unload()
+/**
+ * Called automatically by OBS when the plugin is loaded into memory.
+ */
+bool obs_module_load(void)
 {
-	blog(LOG_INFO, "plugin unloaded");
+    // 1. Register the platform-specific slideshow text sources
+#if defined(_WIN32)
+    obs_register_source(&obs_text_gdiplus_slideshow_source_info);
+#elif defined(__APPLE__) || defined(__linux__)
+    obs_register_source(&obs_text_freetype2_slideshow_source_info);
+#endif
+
+    // 2. Register the modern custom dock UI so it appears under the Docks menu
+    obs_frontend_add_custom_qdock(
+        "obs_text_slideshow_dock",                         // Unique internal ID
+        obs_module_text("TextSlideshowDockTitle"),         // Text shown in the menu
+        CreateTextSlideshowDock,                           // The builder function above
+        nullptr                                            // Extra data (not needed here)
+    );
+
+    return true;
+}
+
+/**
+ * Called automatically by OBS when the plugin is being closed down.
+ */
+void obs_module_unload(void)
+{
+    // Clean up operations can go here if needed by future updates
 }
